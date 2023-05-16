@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+MAX_SIZE=2500000000000
+SOURCE="$1"
+TARGET="$2"
+
+target_exists(){
+	[ -f "$1" ]
+}
+
+check_tar_size(){
+	if [[ -f $TARGET ]]; then
+		tar tvf $TARGET | sed 's/ \+/ /g' | cut -f3 -d' ' | sed '2,$s/^/+ /' | paste -sd' ' | bc
+	else
+		echo 0
+	fi
+}
+
+check_folder_size(){
+	du -sb "$1" | awk '{print $1}'
+}
+
+already_in_tar(){
+	tar tf $TARGET "$1" >/dev/null 2>&1
+}
+
+find $SOURCE -mindepth 1 -maxdepth 1 -type d -print0 | sort -z |
+	while IFS= read -r -d $'\0' line; do
+		echo "######################################"
+		echo $line
+		TAR_SIZE=$(check_tar_size)
+		echo "tar size: $TAR_SIZE"
+		FOLDER_SIZE=$(check_folder_size "$line")
+		echo "folder size: $FOLDER_SIZE"
+		COMBINED_SIZE=$((TAR_SIZE + FOLDER_SIZE))
+		echo "combined size: $COMBINED_SIZE"
+
+		if [ $COMBINED_SIZE -gt $MAX_SIZE ]; then
+			echo "MAX_SIZE exceeded, breaking ..."
+			break
+		fi
+
+		if target_exists $TARGET; then
+			if ! already_in_tar "$line"; then
+				tar rvf $TARGET "$line"
+			else
+				echo "already in tar, skipping ..."
+			fi
+		else
+			tar cvf $TARGET "$line"
+		fi
+		echo "######################################"
+	done
+
+echo "... fin."
+
+exit $?
